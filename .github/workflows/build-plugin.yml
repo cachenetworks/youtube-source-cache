@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-plugin:
@@ -36,10 +36,26 @@ jobs:
       - name: Build plugin JAR
         run: ./gradlew :plugin:build --no-daemon
 
-      - name: Upload plugin JAR
+      - name: Upload plugin JAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: youtube-plugin
           path: plugin/build/libs/youtube-plugin-*.jar
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish latest build release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Latest Build
+          prerelease: true
+          make_latest: true
+          generate_release_notes: false
+          body: |
+            Automated Lavalink YouTube plugin build from `${{ github.sha }}`.
+
+            This release is automatically updated from the latest successful build on `main`.
+          files: plugin/build/libs/youtube-plugin-*.jar
+          fail_on_unmatched_files: true
