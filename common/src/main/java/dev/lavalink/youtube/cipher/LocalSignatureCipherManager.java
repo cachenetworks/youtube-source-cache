@@ -66,9 +66,32 @@ public class LocalSignatureCipherManager implements CipherManager {
             "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*," +
             "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*};");
 
+    /*
+     * YouTube periodically changes the expression used as the second argument to the
+     * signature helper functions. Older players almost always used a decimal literal,
+     * while newer players may use an indexed global, arithmetic expression, or another
+     * minified expression. Requiring `\\d+` therefore makes an otherwise valid decipher
+     * function invisible to the extractor.
+     */
     private static final Pattern SIG_FUNCTION_PATTERN = Pattern.compile(
-        "function(?:\\s+" + VARIABLE_PART + ")?\\((" + VARIABLE_PART + ")\\)\\{" +
-            VARIABLE_PART + "=" + VARIABLE_PART + ".*?\\(\\1,\\d+\\);return\\s*\\1.*};"
+        "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{" +
+            VARIABLE_PART + "\\s*=\\s*" + VARIABLE_PART + ".*?" +
+            "\\(\\s*\\1\\s*,\\s*[^)]*\\)\\s*;.*?return\\s*\\1.*?}",
+        Pattern.DOTALL
+    );
+
+    /*
+     * Fallback for player variants where the signature transform no longer has the
+     * exact assignment/call shape above. Signature decipher functions are still
+     * characterised by splitting a string into characters and joining it again after
+     * applying transform operations. Keep this deliberately secondary so the more
+     * specific matcher wins whenever possible.
+     */
+    private static final Pattern SIG_FUNCTION_FALLBACK_PATTERN = Pattern.compile(
+        "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*" + VARIABLE_PART + "\\s*\\)\\s*\\{" +
+            ".*?(?:\\.split\\s*\\(|\\[(?:\"split\"|'split')\\]\\s*\\().*?" +
+            "return\\s+" + VARIABLE_PART + "(?:\\.join\\s*\\(|\\[(?:\"join\"|'join')\\]\\s*\\()).*?}",
+        Pattern.DOTALL
     );
 
     private static final Pattern N_FUNCTION_PATTERN = Pattern.compile(
@@ -296,9 +319,11 @@ public class LocalSignatureCipherManager implements CipherManager {
         }
 
         Matcher sigFunctionMatcher = SIG_FUNCTION_PATTERN.matcher(script);
-
         if (!sigFunctionMatcher.find()) {
-            scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.DECIPHER_FUNCTION_NOT_FOUND);
+            sigFunctionMatcher = SIG_FUNCTION_FALLBACK_PATTERN.matcher(script);
+            if (!sigFunctionMatcher.find()) {
+                scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.DECIPHER_FUNCTION_NOT_FOUND);
+            }
         }
 
         Matcher nFunctionMatcher = N_FUNCTION_PATTERN.matcher(script);
